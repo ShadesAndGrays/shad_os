@@ -1,8 +1,14 @@
 #![no_std]
 #![no_main]
 
+#![allow(dead_code)]
+
+
+mod std;
+
 use bootloader_api::config;
 use x86_64::instructions::hlt;
+use std::writer::*;
 
 #[cfg_attr(not(test), panic_handler)]
 fn panic(_info:&core::panic::PanicInfo) -> ! {
@@ -11,31 +17,34 @@ fn panic(_info:&core::panic::PanicInfo) -> ! {
         hlt();
     }
 }
+
 pub static BOOTLOADER_CONFIG:bootloader_api::BootloaderConfig = {
     let mut config = bootloader_api::BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(config::Mapping::Dynamic);
+    config.kernel_stack_size = 100 * 1024; // 100 KiB
     config
 };
+
 const CONFIG: bootloader_api::BootloaderConfig = {
     let mut config = bootloader_api::BootloaderConfig::new_default();
     config.kernel_stack_size = 100 * 1024; // 100 KiB
     config
 };
-bootloader_api::entry_point!(kernel_start,config = &BOOTLOADER_CONFIG);
 
-
+bootloader_api::entry_point!(kmain,config = &BOOTLOADER_CONFIG);
 
 #[no_mangle]
-fn kernel_start(bootinfo: &'static mut bootloader_api::BootInfo) -> !{
+fn kmain(bootinfo: &'static mut bootloader_api::BootInfo) -> !{
 
-    let vga = 0xb8000 as *mut u8;
+    // Get the info for a frame buffer the boot info api gives Thanks :)
+    let frame_buffer_info = bootinfo.framebuffer.as_mut().unwrap().info();
 
-    for (i, b) in b"Hello world".iter().enumerate() {
-        unsafe {
-            *vga.offset(i as isize * 2) = *b;
-            *vga.offset(i as isize * 2 + 1) = 0x0f;
-        }
-    }
+    let buffer = bootinfo.framebuffer.as_mut().unwrap().buffer_mut();
+
+    FRAME_BUFFER_WRITER.lock().init(buffer,frame_buffer_info);
+
+    println!("Hello new world");
+
 
     loop {
         hlt()
